@@ -3,6 +3,7 @@ const knex = require('../db/knex');
 const { hashPassword, checkHashPassword } = require('../helpers/hash');
 const { seed } = require('../db/seeds/01_users');
 const jwt = require('jsonwebtoken');
+
 const migrateUp = async function () {
     await up(knex);
     console.log('Migration up completed');
@@ -65,8 +66,6 @@ const getAllUsers = function (req, res) {
   };
   
   
-
-
 // get user by id
 const getUserById = function (req, res) {
     knex('users').select().where('id', req.params.id).then(function (users) {
@@ -74,9 +73,8 @@ const getUserById = function (req, res) {
     }
     );
 };
-
-// create user
-const createUser = function (req, res) {
+// register new user
+const register = function (req, res) {
     const {
         username,
         password,
@@ -117,6 +115,60 @@ const createUser = function (req, res) {
             throw err;
         });
 }
+
+// create new user after login
+const createUser = function (req, res) {
+    const {
+        username,
+        password,
+        name,
+        age,
+        email,
+        gender
+    } = req.body;
+    const createdBy = req.session.id;
+    // check if the username is already in the database
+    knex('users').where('username', username)
+        .then(rows => {
+            console.log(rows);
+            if (rows.length > 0) {
+                return res.status(400).json({
+                    message: 'Username already exists'
+                });
+            } else {
+                const { salt, hashedPassword } = hashPassword(password);
+                const hashedPasswordString = hashedPassword.toString('base64');
+                const newUser = {
+                    username: username,
+                    password: hashedPasswordString,
+                    salt: salt,
+                    name: name,
+                    age: age,
+                    email: email,
+                    gender: gender,
+                    created_by: createdBy 
+                };
+                return knex('users').insert(newUser).then(() => {
+                    return newUser;
+                }).then((user) => {
+                    // Create a new token for the registered user
+                    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET);
+                    // Attach the token to the response header
+                    res.setHeader('Authorization', `Bearer ${token}`);
+                    return res.status(201).json({
+                        message: 'User created successfully'
+                    });
+                }).catch(err => {
+                    throw err;
+                });
+            }
+        })
+        .catch(err => {
+            throw err;
+        });
+}
+
+
 // update user
 const updateUser = function (req, res) {
     const id = req.params.id; 
@@ -186,7 +238,6 @@ const updateUser = function (req, res) {
         });
 };
 
-
 // delete user
 const deleteUser = function (req, res) {
     knex('users').where('id', req.params.id).del().then(function () {
@@ -230,6 +281,7 @@ const login = (req, res) => {
 module.exports = {
     getAllUsers,
     getUserById,
+    register,
     createUser,
     updateUser,
     deleteUser,
